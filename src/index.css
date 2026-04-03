@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  /* Core Colors from your Palette */
+  --color-text: #ffffff;
+  --color-text-h: #ffffff;
+  --color-bg: #000000;
+  --color-border-subtle: rgba(255, 255, 255, 0.12);
+  --color-code-bg: #0f172a;
+  --color-accent: #aa3bff;
+  --color-accent-bg: rgba(170, 59, 255, 0.1);
+  --color-accent-border: rgba(170, 59, 255, 0.5);
+
+  --shadow-slab-dark: 4px 4px 0px 0px rgba(255, 255, 255, 0.15);
+  
+  /* Dark Mode Overrides */
+  --variant-dark {
+    --color-text: #9ca3af;
+    --color-text-h: #f3f4f6;
+    --color-bg: #16171d;
+    --color-border-subtle: #2e303a;
+    --color-code-bg: #1f2028;
+    --color-accent: #c084fc;
+    --color-accent-bg: rgba(192, 132, 252, 0.15);
+    --color-accent-border: rgba(192, 132, 252, 0.5);
+  }
+
+  /* Typography */
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+@layer base {
+  /* Global Document Styling */
+  html, body {
+    @apply bg-[#000000] text-[#FFFFFF] font-sans antialiased;
+    font-size: 18px;
+    letter-spacing: 0.18px;
+    line-height: 1.45;
+  }
+
+  @media (max-width: 1024px) {
+    html { font-size: 16px; }
+  }
+
+  /* Mobile-First Touch Targets (Safety Guardrail) */
+  button, input, select, a {
+    @apply min-h-[44px] min-w-[44px] inline-flex items-center justify-center;
+  }
+
+  /* Headings */
+  h1 {
+    @apply text-text-h font-medium mb-8 mt-8 text-[56px] tracking-[-1.68px];
+  }
+
+  h2 {
+    @apply text-text-h font-medium mb-2 text-[24px] leading-[118%] tracking-[-0.24px];
+  }
+
+  @media (max-width: 1024px) {
+    h1 { @apply text-[36px] my-5; }
+    h2 { @apply text-[20px]; }
+  }
+
+  /* Code Blocks */
+  code {
+    @apply font-mono text-[15px] leading-[135%] px-2 py-1 bg-code-bg text-text-h rounded;
+  }
+}
+
+@layer components {
+  /* Reusable shell matching your #root constraints */
+  .app-shell {
+    @apply w-[1126px] max-w-full mx-auto text-center border-x border-border-subtle min-h-[100svh] flex flex-col box-border;
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

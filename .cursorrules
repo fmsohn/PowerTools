@@ -1,0 +1,27 @@
+# PowerTools Master Architectural Rules
+
+## 1. The Silo Rule (Organization)
+- **Strict Independence**: Modules in `src/modules/` are independent units. Sideways imports between modules are strictly forbidden.
+- **Shared Promotion**: If logic, types, or UI components are needed by more than one module, they must be moved to `src/shared/`.
+- **Component Size**: Keep React components under 100 lines. Break larger components into sub-components within the module's `/components` folder.
+
+## 2. Zero-Footprint Hardcoding (Configuration)
+- **Strict Prohibition**: Never hardcode business constants (rates, splits, thresholds) directly in React components or JSX.
+- **Config-First**: All "hardcoded" rules must live in `src/modules/[module-name]/config/`.
+- **Naming Convention**: Use SCREAMING_SNAKE_CASE for constants (e.g., `MAX_SAFE_MARGIN = 0.030`).
+
+## 3. Unit & Logic Integrity (The Math)
+- **Standard Units**: All internal math and variable naming must default to **kWh** and **$/kWh**.
+- **Naming**: Variables representing money must include a suffix like `PerKwh` (e.g., `marginPerKwh`).
+- **Logic Location**: Business math must be kept in pure functions within `shared/utils` or the module's `utils` folder, never inside UI components.
+
+## 4. Mobile-First & Safety (UX)
+- **Touch Targets**: All interactive elements (buttons, inputs, selects) MUST have a minimum height of 44px.
+- **Persistence**: Use `sessionStorage` to auto-save input states so user data survives page refreshes.
+- **Sanity Checks**: Every user input must include a "Safety Guardrail." For Margin inputs, trigger a "Missing Decimal" warning if a whole number is entered in Decimal mode.
+
+## 5. Technical Guardrails (The Bones)
+- **State Source of Truth**: UI components must never calculate or store their own state if it can be derived from other props. Use "derived state" to prevent sync issues.
+- **TypeScript**: Strictly prohibit the use of `any`. Define explicit Interfaces or Types for all configuration and calculation objects.
+- **CSS Hygiene**: Use Tailwind utility classes. The use of `!important` tags is strictly forbidden to prevent CSS bleeding.
+- **Zero-Backend**: All logic must be local-first. Do not attempt to call external databases; use `localStorage` for profiles if needed.
