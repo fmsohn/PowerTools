@@ -79,4 +79,24 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  @keyframes neon-cyan-sniff {
+    0%,
+    100% {
+      box-shadow:
+        6px 6px 0 0 #000,
+        0 0 12px rgba(0, 255, 255, 0.35);
+      border-color: #00ffff;
+    }
+    50% {
+      box-shadow:
+        6px 6px 0 0 #000,
+        0 0 32px rgba(0, 255, 255, 0.95);
+      border-color: #66ffff;
+    }
+  }
+
+  .animate-neon-cyan-sniff {
+    animation: neon-cyan-sniff 1.05s ease-in-out infinite;
+  }
 }
