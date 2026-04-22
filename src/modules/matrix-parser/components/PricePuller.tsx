@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   LOAD_FACTOR_LABELS,
   UTILITY_LABELS,
-} from '../../../constants/market-data'
+} from '../../../constants/market-data.constants'
 import { SLAB_NEON_FIELD_CLASS } from '../../../shared/components/ValidatedInput'
 import { isWithinUsage } from '../../../shared/utils/math'
 import type { LoadFactor, Rate, RateProductType, Utility } from '../../../types/market-data'
@@ -32,7 +32,7 @@ const SLAB_SUPPLIER_BADGE_STALE = `${SLAB_SUPPLIER_BADGE_BASE} border-[#fbbf24] 
 const DISCOVERY_TABLE_WRAP =
   'overflow-x-auto rounded-md border-4 border-cyan-400 bg-[#04060a] shadow-[6px_6px_0_0_rgba(34,211,238,0.45),10px_10px_0_0_rgba(255,0,255,0.35)]'
 
-const DISCOVERY_TABLE = 'w-full min-w-[280px] border-collapse text-left font-mono text-sm'
+const DISCOVERY_TABLE = 'w-full min-w-[360px] border-collapse text-left font-mono text-sm'
 
 const DISCOVERY_WINNER_LEGEND = 'mb-2 text-[11px] font-medium text-slate-400'
 
@@ -293,7 +293,7 @@ interface DiscoveryPullBlockProps {
  * filters change so the slate clears without effects.
  */
 function formatUsdPerKwh(value: number): string {
-  return `$${value.toFixed(4)}/kWh`
+  return `$${value.toFixed(5)}/kWh`
 }
 
 function DiscoveryPullBlock({

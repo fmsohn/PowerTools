@@ -17,6 +17,14 @@ export const LOAD_FACTOR_MAP: Record<string, LoadFactor> = {
   HIGH: 'HIGH',
 }
 
+/** Canonical zone keys to prevent casing duplicates. */
+export const ZONE_MAP: Record<string, string> = {
+  HOUSTON: 'HOUSTON',
+  SOUTH: 'SOUTH',
+  NORTH: 'NORTH',
+  WEST: 'WEST',
+}
+
 /** Display labels for canonical utility keys. */
 export const UTILITY_LABELS: Readonly<Record<Utility, string>> = {
   CENTERPOINT: 'CenterPoint',
@@ -49,4 +57,16 @@ export const UNIT_CONVERSION: Readonly<Record<PriceUnit, number>> = {
 
 export function toCanonicalDollarsPerKwh(raw: number, unit: PriceUnit): number {
   return raw * UNIT_CONVERSION[unit]
+}
+
+/** Converts Excel column letters (A, B, C... AA, AB) to 0-based array indices.
+ * Example: 'A' -> 0, 'B' -> 1, 'Z' -> 25, 'AA' -> 26
+ */
+export const colToIndex = (col: string): number => {
+  let index = 0
+  const cleanCol = col.trim().toUpperCase()
+  for (let i = 0; i < cleanCol.length; i++) {
+    index = index * 26 + cleanCol.charCodeAt(i) - 64
+  }
+  return index - 1
 }

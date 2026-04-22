@@ -29,6 +29,7 @@ type DatePromptState = {
 export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProps) {
   const { notify } = useNotificationService()
   const inputId = useId()
+  const recognizedSuppliers = SUPPLIER_REGISTRY.map((supplier) => supplier.name).join(', ')
   const [isDragging, setIsDragging] = useState(false)
   const [sniffing, setSniffing] = useState(false)
   const [slab, setSlab] = useState<SlabState | null>(null)
@@ -242,9 +243,7 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
           Matrix file
         </span>
         <span className="max-w-md text-sm text-slate-400">
-          Drop a matrix file (.xlsx, .xlsm, .csv), a JSON pivot export, or click to browse. Recognized
-          suppliers: {SUPPLIER_REGISTRY.map((s) => s.name).join(', ')} (APG&E uses “ERCOT.xlsx” with
-          a “TX Matrix” tab).
+          {`Drop a matrix file (.xlsx, .xlsm, .csv) or click to browse. Recognized suppliers: ${recognizedSuppliers}`}
         </span>
         <input
           id={inputId}

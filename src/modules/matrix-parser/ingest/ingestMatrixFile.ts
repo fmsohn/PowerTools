@@ -52,7 +52,144 @@ function isIsoYmd(value: string): boolean {
   )
 }
 
+function parseMonthNameDateToken(name: string): string | null {
+  const sfeFilePattern =
+    /(?:^|[^\w])(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s(\d{1,2}),\s(\d{4})(?:[^\w]|$)/i
+  const match = name.match(sfeFilePattern)
+  if (!match) {
+    return null
+  }
+  const [, monthStr, dayRaw, yearRaw] = match
+  if (!monthStr || !dayRaw || !yearRaw) {
+    return null
+  }
+  const monthMap: Record<string, string> = {
+    jan: '01',
+    feb: '02',
+    mar: '03',
+    apr: '04',
+    may: '05',
+    jun: '06',
+    jul: '07',
+    aug: '08',
+    sep: '09',
+    oct: '10',
+    nov: '11',
+    dec: '12',
+  }
+  const month = monthMap[monthStr.toLowerCase()]
+  if (!month) {
+    return null
+  }
+  const isoDate = `${yearRaw}-${month}-${dayRaw.padStart(2, '0')}`
+  return isIsoYmd(isoDate) ? isoDate : null
+}
+
+/** Universal MDY (US) date tokens in filenames: `4-20-2026`, `04.20.26`, etc. */
+export function extractDateFromFilename(name: string): string | null {
+  const re = /(\d{4})(\d{2})(\d{2})|(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(name)) !== null) {
+    let yearToken = ''
+    let monthToken = ''
+    let dayToken = ''
+
+    if (match[1] && match[2] && match[3]) {
+      yearToken = match[1]
+      monthToken = match[2]
+      dayToken = match[3]
+    } else if (match[4] && match[5] && match[6]) {
+      monthToken = match[4]
+      dayToken = match[5]
+      yearToken = match[6]
+    } else {
+      continue
+    }
+
+    const month = Number(monthToken)
+    const day = Number(dayToken)
+    let year = Number(yearToken)
+    if (yearToken.length === 2 && Number.isFinite(year)) {
+      year = 2000 + year
+    }
+    if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) {
+      continue
+    }
+    const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    if (isIsoYmd(isoDate)) {
+      console.log(
+        `%c [Date Extraction] Resolved ${isoDate} from ${name} (universal MDY)`,
+        'color: #00FFFF; font-weight: bold;',
+      )
+      return isoDate
+    }
+  }
+  return null
+}
+
+function fileBaseLower(fileName: string): string {
+  return fileName.trim().split(/[/\\]/).pop()?.toLowerCase() ?? ''
+}
+
+function resolveSuppliersLayered(
+  fileName: string,
+  sheetNames: readonly string[],
+  firstSheetRows: unknown[][] | undefined,
+  sheetPreviews: Readonly<Record<string, unknown[][]>> | undefined,
+): SupplierSilo[] {
+  const filenameDate = extractDateFromFilename(fileName)
+  const level1 =
+    filenameDate !== null
+      ? SUPPLIER_REGISTRY.filter((s) =>
+          s.keywords.some((kw) => fileBaseLower(fileName).includes(kw.toLowerCase())),
+        )
+      : []
+
+  if (sheetPreviews === undefined) {
+    console.log('%c[Forensic Ingest] sheetPreviews is undefined before identify()', 'color:#e91e63;font-weight:bold', {
+      fileName,
+      sheetNames,
+      firstSheetRowsDefined: firstSheetRows !== undefined,
+    })
+  } else {
+    const previewKeys = Object.keys(sheetPreviews)
+    const previewCounts = previewKeys.map((k) => [k, (sheetPreviews[k] ?? []).length] as const)
+    console.log('%c[Forensic Ingest] handoff to supplier.identify()', 'color:#e91e63;font-weight:bold', {
+      fileName,
+      sheetNames: [...sheetNames],
+      sheetPreviewKeys: previewKeys,
+      rowCountsBySheet: Object.fromEntries(previewCounts),
+    })
+  }
+
+  const dnaMatches = SUPPLIER_REGISTRY.filter((supplier) =>
+    supplier.identify(sheetNames, fileName, firstSheetRows, sheetPreviews),
+  )
+
+  if (level1.length === 1) {
+    const primary = level1[0]!
+    if (dnaMatches.includes(primary)) {
+      return [primary]
+    }
+    if (dnaMatches.length > 0) {
+      return dnaMatches
+    }
+    return [primary]
+  }
+
+  return dnaMatches
+}
+
 export function extractDateFromFileName(name: string): string | null {
+  const monthNameDate = parseMonthNameDateToken(name)
+  if (monthNameDate) {
+    console.log(
+      `%c [Date Extraction] Resolved ${monthNameDate} from ${name} (month-name token)`,
+      'color: #00FFFF; font-weight: bold;',
+    )
+    return monthNameDate
+  }
+
   const ymd = /(?:^|[^\d])(\d{4})\.(\d{2})\.(\d{2})(?:[^\d]|$)/.exec(name)
   if (ymd && ymd[1] && ymd[2] && ymd[3]) {
     const isoDate = `${ymd[1]}-${ymd[2]}-${ymd[3]}`
@@ -63,6 +200,11 @@ export function extractDateFromFileName(name: string): string | null {
       )
       return isoDate
     }
+  }
+
+  const universal = extractDateFromFilename(name)
+  if (universal) {
+    return universal
   }
 
   const mdy = /(?:^|[^\d])(\d{2})-(\d{2})-(\d{4})(?:[^\d]|$)/.exec(name)
@@ -147,19 +289,32 @@ function parseSupplierWorkbook(
   return supplier.parse(sheets as Record<string, unknown[][]>, fileName, effectiveDate)
 }
 
+function extractChariotDateFromWorkbookPreview(sheetPreviews: Readonly<Record<string, unknown[][]>>): string | null {
+  const presentationSheet = sheetPreviews.PresentationSheet
+  if (!presentationSheet) {
+    return null
+  }
+  const rawCell = presentationSheet[9]?.[0]
+  if (typeof rawCell !== 'string') {
+    return null
+  }
+  const match = /expires at 5PM CST on (\d{1,2})\/(\d{1,2})\/(\d{4})\):/i.exec(rawCell)
+  if (!match || !match[1] || !match[2] || !match[3]) {
+    return null
+  }
+  const isoDate = `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`
+  return isIsoYmd(isoDate) ? isoDate : null
+}
+
 async function resolveEffectiveDate(
   file: File,
   supplier: SupplierSilo | null,
   sheets: Readonly<Record<string, unknown[][]>>,
+  sheetPreviews: Readonly<Record<string, unknown[][]>>,
   onDateRequest?: IngestMatrixFileOptions['onDateRequest'],
 ): Promise<string> {
-  const fromFileName = extractDateFromFileName(file.name)
-  if (fromFileName) {
-    return fromFileName
-  }
-
   let supplierReason = ''
-  const fromSupplier = supplier?.extractEffectiveDate?.(sheets) ?? null
+  const fromSupplier = supplier?.extractEffectiveDate?.(sheets, file.name) ?? null
   if (typeof fromSupplier === 'string' && isIsoYmd(fromSupplier)) {
     return fromSupplier
   }
@@ -167,6 +322,23 @@ async function resolveEffectiveDate(
     supplierReason = fromSupplier.trim()
   } else if (fromSupplier !== null && fromSupplier !== undefined) {
     supplierReason = `${supplier?.name ?? 'Supplier'} Date Regex Failed`
+  }
+
+  const fromFileName = extractDateFromFileName(file.name)
+  if (fromFileName) {
+    return fromFileName
+  }
+
+  if (supplier?.id === 'chariot') {
+    const fromWorkbook = extractChariotDateFromWorkbookPreview(sheetPreviews)
+    if (fromWorkbook) {
+      console.log(
+        `%c [Date Extraction] Resolved ${fromWorkbook} from Chariot PresentationSheet metadata`,
+        'color: #00FFFF; font-weight: bold;',
+      )
+      return fromWorkbook
+    }
+    throw new Error('[Date Extraction] Failed to resolve date from filename.')
   }
 
   if (!onDateRequest) {
@@ -196,7 +368,6 @@ export async function ingestMatrixFile(
   file: File,
   options: IngestMatrixFileOptions = {},
 ): Promise<MatrixIngestResult> {
-  const extractedDateFromFileName = extractDateFromFileName(file.name)
   const lower = file.name.toLowerCase()
   if (lower.endsWith('.json')) {
     try {
@@ -206,7 +377,7 @@ export async function ingestMatrixFile(
         return { kind: 'reject', message: 'JSON root must be an array of matrix rows.' }
       }
       const effectiveDate =
-        extractedDateFromFileName ??
+        extractDateFromFileName(file.name) ??
         normalizeRequestedDateToIso((await options.onDateRequest?.(file.name, 'JSON Import'))?.trim() ?? '') ??
         ''
       if (!effectiveDate) {
@@ -248,12 +419,22 @@ export async function ingestMatrixFile(
   }
 
   const buffer = options.buffer ?? (await file.arrayBuffer())
-  const wb = XLSX.read(buffer, { bookSheets: true, type: 'array' })
+  const wb = XLSX.read(buffer, { type: 'array', sheetRows: 20 })
   console.log('[Sentry] Found Sheets:', wb.SheetNames)
   const sheetNames = wb.SheetNames ?? []
-  const matchingSuppliers = SUPPLIER_REGISTRY.filter((supplier) =>
-    supplier.identify(sheetNames, file.name),
-  )
+  const firstSheetName = sheetNames[0]
+  const firstSheet = firstSheetName ? wb.Sheets[firstSheetName] : undefined
+  const firstSheetRows = firstSheet
+    ? (XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as unknown[][])
+    : undefined
+  const sheetPreviews: Record<string, unknown[][]> = {}
+  for (const name of sheetNames) {
+    const sh = wb.Sheets[name]
+    if (sh) {
+      sheetPreviews[name] = XLSX.utils.sheet_to_json(sh, { header: 1 }) as unknown[][]
+    }
+  }
+  const matchingSuppliers = resolveSuppliersLayered(file.name, sheetNames, firstSheetRows, sheetPreviews)
   if (matchingSuppliers.length === 0) {
     console.error('[Sentry] Unknown Matrix. No DNA match for sheets:', wb.SheetNames)
     return { kind: 'unknown_matrix' }
@@ -310,6 +491,7 @@ export async function ingestMatrixFile(
       file,
       supplier,
       sheets,
+      sheetPreviews,
       options.onDateRequest,
     )
     const rates = normalizeRatesEffectiveDate(

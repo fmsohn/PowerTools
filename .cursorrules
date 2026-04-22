@@ -1,34 +1,52 @@
-# PowerTools Master Architectural Protocol
+1. The Silo & "Dumb Switchboard" Protocol
+The Switchboard Rule: ingestMatrixFile.ts is a "Dumb Orchestrator". It must NEVER contain supplier-specific if/else blocks, unique data transformations, or manual sheet indexing (e.g., [0]).
 
-## 1. The Silo & "Dumb Switchboard" Protocol
-- The Switchboard Rule: ingestMatrixFile.ts is a "Dumb Orchestrator". It must NEVER contain supplier-specific if/else blocks, unique data transformation, or manual sheet indexing (e.g., [0]).
-- Interface-Driven Execution: All parsing must be triggered via the mandatory SupplierSilo.parse() method: (sheets: Record<string, unknown[][]>, fileName: string) => Rate[].
-- Silo Authority: Every supplier folder (e.g., /nrg, /engie) is the Single Source of Truth for its own tab requirements, metadata extraction, and unpivoting logic.
-- Registry Integrity: Use src/modules/matrix-parser/supplierRegistry.ts as the sole source of truth. The bridge at src/config/ is deprecated and must not be used.
+Interface-Driven Execution: All parsing must be triggered via the mandatory SupplierSilo.parse() method: (sheets: Record<string, unknown[][]>, fileName: string) => Rate[].
 
-## 2. Market Data & Lubbock Integrity
-- LPL Purity: LPL (Lubbock Power & Light) is a Utility (TDSP), never a Load Factor.
-- Strict Mapping: It is strictly forbidden to map LPL to usage placeholders like MEDIUM. Parsers must map raw strings to canonical keys in UTILITY_MAP and LOAD_FACTOR_MAP.
-- Utility Keys: Only use: CENTERPOINT, ONCOR, TNMP, AEP_CENTRAL, AEP_NORTH, and LPL.
-- AEP Resolution: Resolve AEP keys based on Load Zone: "South" -> AEP_CENTRAL, "North/West" -> AEP_NORTH.
-- Load Factor Keys: Only use: LOW, MEDIUM, HIGH.
+Silo Authority: Every supplier folder (e.g., /sfe, /nrg) is the Single Source of Truth for its own tab requirements, metadata extraction, and unpivoting logic.
 
-## 3. 3D Neon Slab & UI logic (UX/Aesthetic)
-- Aesthetic: Implement "3D Neon Slab" design. Use high-contrast Cyan (#00FFFF) and Fuchsia (#FF00FF) accents on Deep Black (#050505).
-- Slab Shadows: Use thick, hard-offset #000 shadows (e.g., 6px 6px 0px #000) for all cards, inputs, and buttons.
-- Feedback: Use a Cyan pulsing border during file processing and Fuchsia-bordered alert slabs for errors.
-- View Switching: "Commission Calculator" and "Matrix Parser" must be separated via the primary navigation.
-- Component Size: Keep React components under 100 lines for maintainability.
+Registry Integrity: Use src/modules/matrix-parser/supplierRegistry.ts as the sole source of truth. The bridge at src/config/ is deprecated and must not be used.
 
-## 4. Data Integrity & Excel Pipeline
-- Excel Engine: Use xlsx (SheetJS) for all file decompression.
-- Thread Isolation: Large file extractions must happen in the Web Worker (xlsxIngest.worker.ts) to prevent UI lag.
-- Multi-Tab Support: Silos are responsible for iterating through ALL tabs requested in their getReqs() contract (e.g., using .flatMap()).
-- Standard Units: All internal math and storage use kWh and $/kWh.
-- Naming: Variables representing money must include a unit suffix (e.g., ratePerKwh, marginPerKwh).
+2. Market Data & Utility Integrity
+LPL Purity: LPL (Lubbock Power & Light) is a Utility (TDSP), never a Load Factor.
 
-## 5. Technical Guardrails
-- TypeScript: Strictly prohibit any. Use interfaces from src/types/market-data.ts.
-- Offline-First: All logic and persistence (IndexedDB/PowerToolsDB) must be 100% local.
-- State Resets: Use filterSignature keys to ensure clean UI resets during new file ingestion.
-- Safety Guards: Implement immediate feedback (e.g., "Missing Decimal") for any calculated field.
+Normalization Gate: All raw strings from Excel (Zones, Utilities, Load Factors) must pass through a .toUpperCase().trim() normalization gate before registry lookup or persistence to prevent UI pollution (e.g., "Houston" vs "HOUSTON").
+
+Utility Keys: Only use authorized keys from UTILITY_MAP: CENTERPOINT, ONCOR, TNMP, AEP_CENTRAL, AEP_NORTH, and LPL.
+
+AEP & Ghosting Protocol: * Direct Resolution: If specific zone data is available, resolve AEP keys as: "South" -> AEP_CENTRAL, "North/West" -> AEP_NORTH.
+
+Ghosting: If a supplier (e.g., SFE) provides generic "AEP" or combined "CenterPoint/Oncor" data, the Silo must return an array of multiple utility keys to generate distinct "Ghost Records" for each applicable territory.
+
+Load Factor Keys: Only use: LOW, MEDIUM, HIGH.
+
+3. 3D Neon Slab & UI logic (UX/Aesthetic)
+Aesthetic: Implement "3D Neon Slab" design using high-contrast Cyan (#00FFFF) and Fuchsia (#FF00FF) accents on Deep Black (#050505).
+
+Slab Shadows: Use thick, hard-offset #000 shadows (e.g., 6px 6px 0px #000) for all cards, inputs, and buttons.
+
+Feedback: Use a Cyan pulsing border during file processing and Fuchsia-bordered alert slabs for errors.
+
+View Switching: "Commission Calculator" and "Matrix Parser" must be separated via the primary navigation.
+
+Component Size: Keep React components under 100 lines for maintainability.
+
+4. Data Integrity & Excel Pipeline
+Excel Engine: Use xlsx (SheetJS) for all file decompression.
+
+Thread Isolation: Large file extractions must happen in the Web Worker (xlsxIngest.worker.ts) to prevent UI lag.
+
+Standard Units: All internal math and storage use kWh and $/kWh.
+
+Naming: Variables representing money must include a unit suffix (e.g., ratePerKwh, marginPerKwh).
+
+Date Uniformity: All startDate and effectiveDate values must be stored in YYYY-MM-DD string format.
+
+5. Technical Guardrails
+TypeScript: Strictly prohibit any. Use interfaces from src/types/market-data.ts.
+
+Offline-First: All logic and persistence (IndexedDB/PowerToolsDB) must be 100% local.
+
+State Resets: Use filterSignature keys to ensure clean UI resets during new file ingestion.
+
+Safety Guards: Implement immediate feedback (e.g., "Missing Decimal") for any calculated field.

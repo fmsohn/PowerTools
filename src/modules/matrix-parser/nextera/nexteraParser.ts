@@ -1,4 +1,5 @@
 import type { LoadFactor, Rate, Utility } from '../../../types/market-data'
+import { NEXTERA_MATRIX_FILENAME_KEYWORDS } from '../supplierFilenameKeywords'
 
 const NEXTERA_SHEET_HINT = 'MATRIX'
 const EXPECTED_ANCHOR_HEADERS = [
@@ -22,7 +23,7 @@ const NEXTERA_UTILITY_MAP: Readonly<Record<string, Utility>> = {
 
 const NEXTERA_LOAD_FACTOR_MAP: Readonly<Record<string, LoadFactor>> = {
   HLF: 'HIGH',
-  MLF: 'MED',
+  MLF: 'MEDIUM',
   LLF: 'LOW',
 }
 
@@ -34,6 +35,36 @@ function normalizeCell(value: unknown): string {
 
 function normalizeUpper(value: unknown): string {
   return normalizeCell(value).toUpperCase()
+}
+
+function hasNexteraHeaderDna(rows: any[][]): boolean {
+  if (!rows || rows.length === 0) {
+    console.log('[NextEra DNA] Failed: No rows available for header verification.')
+    return false
+  }
+
+  const candidateIndexes = [0, 1]
+  for (const rowIndex of candidateIndexes) {
+    const row = rows[rowIndex] ?? []
+    const product = normalizeUpper(row[0])
+    const utility = normalizeUpper(row[1])
+    const term = normalizeUpper(row[2])
+    const price = normalizeUpper(row[3])
+
+    if (
+      product === 'PRODUCT' &&
+      utility === 'UTILITY' &&
+      term === 'TERM' &&
+      price === 'PRICE'
+    ) {
+      return true
+    }
+  }
+
+  console.log(
+    '[NextEra DNA] Failed: Expected header DNA at columns [0..3] as Product/Utility/Term/Price in row 0 or 1.',
+  )
+  return false
 }
 
 function findAnchorRowIndex(rows: unknown[][]): number {
@@ -172,18 +203,52 @@ export function getNexteraRequirements(): { targetSheets: readonly string[] } {
   return { targetSheets: ['*'] }
 }
 
-export function isNexteraMatrix(sheetNames: readonly string[], fileName?: string): boolean {
-  const file = normalizeUpper(fileName ?? '')
-  if (file.includes('PRICINGMATRIX') || file.includes('NEXTERA')) {
+export function isNexteraMatrix(
+  sheetNames: readonly string[],
+  fileName?: string,
+  rows?: unknown[][],
+): boolean {
+  if (sheetNames.length !== 1) {
+    console.log(`[NextEra DNA] Failed: Expected 1 tab, found ${sheetNames.length}.`)
+    return false
+  }
+
+  const normalizedFileName = normalizeUpper(fileName ?? '')
+  const containsAtlanticMarker =
+    normalizedFileName.includes('AE TEXAS') || normalizedFileName.includes('ATLANTIC')
+  const containsAtlanticTab = sheetNames.some((sheetName) => {
+    const normalized = normalizeUpper(sheetName)
+    return normalized.includes('AE TEXAS') || normalized.includes('ATLANTIC')
+  })
+  if (containsAtlanticMarker || containsAtlanticTab) {
+    console.log('[NextEra DNA] Failed: Atlantic/AE Texas marker found in filename or tab name.')
+    return false
+  }
+
+  if (rows && rows.length > 0 && !hasNexteraHeaderDna(rows as any[][])) {
+    return false
+  }
+
+  if (rows && rows.length > 0 && findAnchorRowIndex(rows) >= 0) {
     return true
   }
-  const matchedSheet = sheetNames.some((name) =>
-    normalizeUpper(name).includes(normalizeUpper(NEXTERA_SHEET_HINT)),
-  )
+
+  const fileBase = fileName?.trim().split(/[/\\]/).pop()?.toLowerCase() ?? ''
+  const fileUpper = normalizeUpper(fileName ?? '')
+  if (
+    fileName !== undefined &&
+    fileName.length > 0 &&
+    (NEXTERA_MATRIX_FILENAME_KEYWORDS.some((kw) => fileBase.includes(kw.toLowerCase())) ||
+      fileUpper.includes('PRICINGMATRIX'))
+  ) {
+    return true
+  }
+  const matchedSheet = sheetNames.some((name) => {
+    const normalized = normalizeUpper(name)
+    return normalized === 'PRICING' || normalized.includes(normalizeUpper(NEXTERA_SHEET_HINT))
+  })
   if (!matchedSheet) {
-    console.log(
-      `[NextEra identify] No matching matrix sheet found. Checked sheets: ${sheetNames.join(', ') || '(none)'}`,
-    )
+    console.log(`[NextEra DNA] Failed: No matching matrix sheet found. Checked sheets: ${sheetNames.join(', ') || '(none)'}`)
   }
   return matchedSheet
 }

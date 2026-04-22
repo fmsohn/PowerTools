@@ -3,7 +3,8 @@ import {
   PRODUCT_MAP,
   toCanonicalDollarsPerKwh,
   UTILITY_MAP,
-} from '../../../constants/market-data'
+} from '../../../constants/market-data.constants'
+import { NRG_MATRIX_FILENAME_KEYWORDS } from '../supplierFilenameKeywords'
 import type { MatrixProductKey, Rate, RateProductType } from '../../../types/market-data'
 
 const MATRIX_ID = 'matrix prices_all'
@@ -172,9 +173,37 @@ export function getNrgRequirements(): { targetSheets: readonly string[] } {
   return { targetSheets: [MATRIX_ID, WIZARD_ID] }
 }
 
-/** True when the workbook contains the literal NRG anchor tab. */
-export function isNrgMatrix(sheetNames: readonly string[]): boolean {
-  return sheetNames.includes(MATRIX_ID)
+function firstRowsHaveNrgStartDateDna(rows: unknown[][]): boolean {
+  for (const row of rows.slice(0, 20)) {
+    const h0 = normalizeHeaderToken(String((row as unknown[] | undefined)?.[0] ?? ''))
+    if (h0 === 'START_DATE') {
+      return true
+    }
+  }
+  return false
+}
+
+/** NRG matrix: anchor tab, filename keyword, or START_DATE “DNA” in the first sheet peek. */
+export function isNrgMatrix(
+  sheetNames: readonly string[],
+  fileName?: string,
+  firstSheetRows?: unknown[][],
+): boolean {
+  if (sheetNames.includes(MATRIX_ID)) {
+    return true
+  }
+  const base = fileName?.trim().split(/[/\\]/).pop()?.toLowerCase() ?? ''
+  if (
+    fileName !== undefined &&
+    fileName.length > 0 &&
+    NRG_MATRIX_FILENAME_KEYWORDS.some((kw) => base.includes(kw.toLowerCase()))
+  ) {
+    return true
+  }
+  if (firstSheetRows && firstSheetRows.length > 0 && firstRowsHaveNrgStartDateDna(firstSheetRows)) {
+    return true
+  }
+  return false
 }
 
 function parseWizardMetadataRow(

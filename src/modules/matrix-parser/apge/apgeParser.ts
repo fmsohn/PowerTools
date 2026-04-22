@@ -1,4 +1,5 @@
-import { LOAD_FACTOR_MAP, toCanonicalDollarsPerKwh } from '../../../constants/market-data'
+import { LOAD_FACTOR_MAP, toCanonicalDollarsPerKwh } from '../../../constants/market-data.constants'
+import { APGE_MATRIX_FILENAME_KEYWORDS } from '../supplierFilenameKeywords'
 import type { LoadFactor, MatrixProductKey, Rate, RateProductType, Utility } from '../../../types/market-data'
 
 const TX_MATRIX_SHEET = 'TX Matrix'
@@ -241,9 +242,31 @@ export function getApgeRequirements(): { targetSheets: readonly string[] } {
   return { targetSheets: [TX_MATRIX_SHEET] }
 }
 
-export function isApgeMatrix(sheetNames: readonly string[], fileName?: string): boolean {
+function headerRowHasCongestionZone(rows: unknown[][]): boolean {
+  const headerIdx = USAGE_HEADER_ROW_1_BASED - 1
+  if (rows.length <= headerIdx) {
+    return false
+  }
+  const headerRow = rows[headerIdx] ?? []
+  return headerRow.some((cell) => String(cell ?? '').includes('Congestion Zone'))
+}
+
+export function isApgeMatrix(
+  sheetNames: readonly string[],
+  fileName?: string,
+  rows?: unknown[][],
+): boolean {
   const base = fileName?.trim().split(/[/\\]/).pop()?.toLowerCase() ?? ''
-  return base === 'ercot.xlsx' && sheetNames.includes(TX_MATRIX_SHEET)
+  const sheetOk = sheetNames.includes(TX_MATRIX_SHEET)
+  const fileOk = base === 'ercot.xlsx'
+  const keywordHit = APGE_MATRIX_FILENAME_KEYWORDS.some((kw) => base.includes(kw.toLowerCase()))
+  if (rows && rows.length > 0 && headerRowHasCongestionZone(rows)) {
+    return true
+  }
+  if (keywordHit && sheetOk) {
+    return true
+  }
+  return fileOk && sheetOk
 }
 
 function resolveUtility(raw: string): Utility | undefined {

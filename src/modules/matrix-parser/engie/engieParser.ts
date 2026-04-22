@@ -1,4 +1,5 @@
-import { LOAD_FACTOR_MAP, toCanonicalDollarsPerKwh, UTILITY_MAP } from '../../../constants/market-data'
+import { LOAD_FACTOR_MAP, toCanonicalDollarsPerKwh, UTILITY_MAP } from '../../../constants/market-data.constants'
+import { ENGIE_MATRIX_FILENAME_KEYWORDS } from '../supplierFilenameKeywords'
 import type { LoadFactor, Rate, RateProductType } from '../../../types/market-data'
 
 const ALL_IN_MATRIX = 'All In Matrix'
@@ -48,8 +49,42 @@ export function getEngieRequirements(): { targetSheets: readonly string[] } {
   return { targetSheets: [ALL_IN_MATRIX, X_CON_MATRIX] }
 }
 
-export function isEngieMatrix(sheetNames: readonly string[]): boolean {
-  return sheetNames.includes(ALL_IN_MATRIX) || sheetNames.includes(X_CON_MATRIX)
+function firstRowsHaveEngieHeaderDna(rows: unknown[][]): boolean {
+  for (const row of rows.slice(0, 20)) {
+    const r = row as unknown[] | undefined
+    const c0 = String(r?.[0] ?? '')
+      .trim()
+      .toLowerCase()
+    const c3 = String(r?.[3] ?? '')
+      .trim()
+      .toLowerCase()
+    if (c0.includes('start date') && c3.includes('utility')) {
+      return true
+    }
+  }
+  return false
+}
+
+export function isEngieMatrix(
+  sheetNames: readonly string[],
+  fileName?: string,
+  firstSheetRows?: unknown[][],
+): boolean {
+  if (sheetNames.includes(ALL_IN_MATRIX) || sheetNames.includes(X_CON_MATRIX)) {
+    return true
+  }
+  const base = fileName?.trim().split(/[/\\]/).pop()?.toLowerCase() ?? ''
+  if (
+    fileName !== undefined &&
+    fileName.length > 0 &&
+    ENGIE_MATRIX_FILENAME_KEYWORDS.some((kw) => base.includes(kw.toLowerCase()))
+  ) {
+    return true
+  }
+  if (firstSheetRows && firstSheetRows.length > 0 && firstRowsHaveEngieHeaderDna(firstSheetRows)) {
+    return true
+  }
+  return false
 }
 
 function parseUsageTierLabel(raw: string): {
