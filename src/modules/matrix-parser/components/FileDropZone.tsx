@@ -8,9 +8,12 @@ import { useNotificationService } from '../../../shared/notifications/Notificati
 import type { Rate } from '../../../types/market-data'
 import { DateRequestModal } from './DateRequestModal'
 import { MatrixIngestSlabs, type SlabState } from './MatrixIngestSlabs'
+import { requestPersistentStorage } from '../../../lib/db'
 
 export interface FileDropZoneProps {
-  readonly onRatesParsed: (rates: Rate[]) => void
+  readonly onRatesParsed: (rates: Rate[]) => Promise<number>
+  readonly onNavigateToComparison: () => void
+  readonly committedRecordCount?: number | null
   readonly className?: string
 }
 
@@ -26,7 +29,12 @@ type DatePromptState = {
   readonly supplierName: string
 }
 
-export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProps) {
+export function FileDropZone({
+  onRatesParsed,
+  onNavigateToComparison,
+  committedRecordCount = null,
+  className = '',
+}: FileDropZoneProps) {
   const { notify } = useNotificationService()
   const inputId = useId()
   const recognizedSuppliers = SUPPLIER_REGISTRY.map((supplier) => supplier.name).join(', ')
@@ -37,6 +45,7 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
   const [batchDates, setBatchDates] = useState<string[]>([])
   const [datePrompt, setDatePrompt] = useState<DatePromptState | null>(null)
   const pendingDateRequestRef = useRef<((value: string | null) => void) | null>(null)
+  const hasRequestedPersistenceRef = useRef(false)
 
   const closeDatePrompt = useCallback((value: string | null) => {
     const resolver = pendingDateRequestRef.current
@@ -73,6 +82,10 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
 
   const processFile = useCallback(
     async (file: File, fileCount = 1) => {
+      if (!hasRequestedPersistenceRef.current) {
+        hasRequestedPersistenceRef.current = true
+        void requestPersistentStorage()
+      }
       setSlab(null)
       setConflict(null)
       setSniffing(true)
@@ -91,7 +104,7 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
 
         const res = await ingestMatrixFile(file, { onConflictDetected, onDateRequest })
         if (res.kind === 'rates') {
-          onRatesParsed(res.rates)
+          await onRatesParsed(res.rates)
           registerBatchDates(res.rates, fileCount)
           notify({ tone: 'success', message: res.detail })
           setSlab({ kind: 'success', text: res.detail })
@@ -149,7 +162,7 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
           onDateRequest,
         })
         if (res.kind === 'rates') {
-          onRatesParsed(res.rates)
+          await onRatesParsed(res.rates)
           registerBatchDates(res.rates, 1)
           notify({ tone: 'success', message: res.detail })
           setConflict(null)
@@ -259,8 +272,26 @@ export function FileDropZone({ onRatesParsed, className = '' }: FileDropZoneProp
         conflict={conflict}
         onSupplierSelected={handleSupplierSelection}
       />
+      {typeof committedRecordCount === 'number' && committedRecordCount > 0 ? (
+        <div
+          className="mt-4 rounded-md border-4 border-[#00FFFF] bg-black px-4 py-3 text-center shadow-[8px_8px_0_0_#001b1b,0_0_30px_rgba(0,255,255,0.65)]"
+          role="status"
+        >
+          <p className="m-0 text-sm font-black uppercase tracking-[0.2em] text-cyan-100">
+            Million-Row Milestone: {committedRecordCount.toLocaleString()} records successfully
+            committed to PowerToolsDB.
+          </p>
+          <button
+            type="button"
+            onClick={onNavigateToComparison}
+            className="mt-3 min-h-[44px] rounded-md border-2 border-cyan-300 bg-[#001818] px-5 py-2 text-xs font-black tracking-[0.22em] text-cyan-100 shadow-[0_0_20px_rgba(0,255,255,0.9),5px_5px_0_0_rgba(255,0,255,0.5)] transition-transform hover:translate-y-px active:translate-y-1 active:shadow-[0_0_14px_rgba(0,255,255,0.75),3px_3px_0_0_rgba(255,0,255,0.4)]"
+          >
+            VIEW MATRIX COMPARISON
+          </button>
+        </div>
+      ) : null}
       {batchDates.length > 1 ? (
-        <p className="mt-3 text-xs font-bold tracking-wide text-amber-300">
+        <p className="mt-3 text-center w-full flex justify-center text-xs font-bold tracking-wide text-amber-300">
           Warning: this upload session has multiple effective dates ({batchDates.join(', ')}).
         </p>
       ) : null}

@@ -6,6 +6,7 @@ import {
 import { SLAB_NEON_FIELD_CLASS } from '../../../shared/components/ValidatedInput'
 import { isWithinUsage } from '../../../shared/utils/math'
 import type { LoadFactor, Rate, RateProductType, Utility } from '../../../types/market-data'
+import { getMetadata } from '../../../lib/db'
 
 const STANDARD_TERMS = [12, 24, 36, 48, 60] as const
 
@@ -20,6 +21,9 @@ const NEON_SEPARATOR_CLASS =
 
 const SLAB_SYNC_STRIP =
   'rounded-md border-4 border-cyan-500/35 bg-[#020408] p-4 shadow-[inset_0_0_18px_rgba(34,211,238,0.08)]'
+
+const VALIDATION_SLAB =
+  'rounded-md border-4 border-[#ff00ff] bg-[#030106] p-4 text-center shadow-[8px_8px_0_0_rgba(16,0,20,0.95),0_0_22px_rgba(255,0,255,0.5)]'
 
 const SLAB_SUPPLIER_BADGE_BASE =
   'inline-flex items-center gap-1.5 rounded-md border-2 bg-[#04060a] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider shadow-[3px_3px_0_0_rgba(0,255,255,0.12)]'
@@ -380,11 +384,11 @@ function DiscoveryPullBlock({
             Pulled matrix rows
           </h3>
           {comparison.supplierColumns.length === 0 || selectedTerms.length === 0 ? (
-            <p className="text-slate-500">No rows matched this pull.</p>
+            <p className="text-center w-full flex justify-center text-slate-500">No rows matched this pull.</p>
           ) : (
             <>
               {visibleRates.length === 0 ? (
-                <p className="mb-3 text-sm text-amber-200/90">
+                <p className="mb-3 text-center w-full flex justify-center text-sm text-amber-200/90">
                   No rows matched this pull; grid shows selected terms and suppliers.
                 </p>
               ) : null}
@@ -457,7 +461,7 @@ function DiscoveryPullBlock({
 
         </section>
       ) : (
-        <p className="mt-10 text-center text-sm text-slate-600">
+        <p className="mt-10 text-center w-full flex justify-center text-sm text-slate-600">
           Results appear here after you click PULL RATES.
         </p>
       )}
@@ -471,6 +475,24 @@ export interface PricePullerProps {
   readonly ingestionEpoch?: number
 }
 
+type MetadataUpdateDetail = {
+  readonly pricingEffectiveDateIso: string | null
+  readonly syncedSuppliers: readonly string[]
+}
+
+function isMetadataUpdateDetail(value: unknown): value is MetadataUpdateDetail {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as { pricingEffectiveDateIso?: unknown; syncedSuppliers?: unknown }
+  const validDate =
+    candidate.pricingEffectiveDateIso === null || typeof candidate.pricingEffectiveDateIso === 'string'
+  const validSuppliers =
+    Array.isArray(candidate.syncedSuppliers) &&
+    candidate.syncedSuppliers.every((supplier) => typeof supplier === 'string')
+  return validDate && validSuppliers
+}
+
 export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
   const [termMode, setTermMode] = useState<'standard' | 'custom'>('standard')
   const [customTerms, setCustomTerms] = useState<string[]>(['', '', '', '', ''])
@@ -481,8 +503,82 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
   const [loadFactor, setLoadFactor] = useState<LoadFactor>('LOW')
   const [startDate, setStartDate] = useState<string>('')
   const [extendedTerms, setExtendedTerms] = useState<number[]>([])
+  const [metadataEffectiveDateIso, setMetadataEffectiveDateIso] = useState<string | null>(null)
+  const [metadataSyncedSuppliers, setMetadataSyncedSuppliers] = useState<string[] | null>(null)
+  const [metadataResolved, setMetadataResolved] = useState(false)
+  const [isMetadataLoading, setIsMetadataLoading] = useState(true)
 
-  const pricingEffectiveDateIso = useMemo(() => {
+  useEffect(() => {
+    let cancelled = false
+    let loadingTimeoutId: ReturnType<typeof setTimeout> | null = null
+    setMetadataResolved(false)
+    setIsMetadataLoading(true)
+    void (async () => {
+      try {
+        const [storedDate, storedSuppliers] = await Promise.all([
+          getMetadata<string>('pricingEffectiveDateIso'),
+          getMetadata<unknown>('syncedSuppliers'),
+        ])
+        if (cancelled) {
+          return
+        }
+        const normalizedDate =
+          typeof storedDate === 'string' && storedDate.trim().length > 0 ? storedDate.trim() : null
+        const normalizedSuppliers = Array.isArray(storedSuppliers)
+          ? storedSuppliers
+              .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+              .map((supplier) => supplier.trim())
+          : null
+        setMetadataEffectiveDateIso(normalizedDate)
+        setMetadataSyncedSuppliers(normalizedSuppliers)
+      } catch {
+        if (!cancelled) {
+          setMetadataEffectiveDateIso(null)
+          setMetadataSyncedSuppliers(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setMetadataResolved(true)
+          // Keep the validation slab visible briefly for a consistent mobile "receipt".
+          loadingTimeoutId = setTimeout(() => {
+            if (!cancelled) {
+              setIsMetadataLoading(false)
+            }
+          }, 600)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (loadingTimeoutId) {
+        clearTimeout(loadingTimeoutId)
+      }
+    }
+  }, [ingestionEpoch])
+
+  useEffect(() => {
+    let loadingTimeoutId: ReturnType<typeof setTimeout> | null = null
+    const handleMetadataUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<unknown>
+      const detail = customEvent.detail
+      if (isMetadataUpdateDetail(detail)) {
+        setMetadataEffectiveDateIso(detail.pricingEffectiveDateIso)
+        setMetadataSyncedSuppliers([...detail.syncedSuppliers])
+      }
+      setMetadataResolved(true)
+      setIsMetadataLoading(true)
+      loadingTimeoutId = setTimeout(() => setIsMetadataLoading(false), 600)
+    }
+    window.addEventListener('powertools-metadata-update', handleMetadataUpdate as EventListener)
+    return () => {
+      if (loadingTimeoutId) {
+        clearTimeout(loadingTimeoutId)
+      }
+      window.removeEventListener('powertools-metadata-update', handleMetadataUpdate as EventListener)
+    }
+  }, [])
+
+  const fallbackPricingEffectiveDateIso = useMemo(() => {
     if (rates.length === 0) {
       return null as string | null
     }
@@ -495,6 +591,16 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
     }
     return max || null
   }, [rates])
+
+  const pricingEffectiveDateIso = useMemo(() => {
+    if (metadataEffectiveDateIso) {
+      return metadataEffectiveDateIso
+    }
+    if (!metadataResolved) {
+      return null
+    }
+    return fallbackPricingEffectiveDateIso
+  }, [fallbackPricingEffectiveDateIso, metadataEffectiveDateIso, metadataResolved])
 
   const currentRatesPool = useMemo(() => {
     if (!pricingEffectiveDateIso) {
@@ -509,6 +615,13 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
       names.add(r.supplier)
     }
     const sorted = [...names].sort((a, b) => a.localeCompare(b))
+    if (metadataSyncedSuppliers && metadataSyncedSuppliers.length > 0) {
+      const currentSet = new Set(metadataSyncedSuppliers)
+      return sorted.map((supplier) => ({
+        supplier,
+        status: currentSet.has(supplier) ? ('current' as const) : ('stale' as const),
+      }))
+    }
     if (!pricingEffectiveDateIso) {
       return sorted.map((supplier) => ({ supplier, status: 'stale' as const }))
     }
@@ -521,7 +634,8 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
         status: onFrontier ? ('current' as const) : ('stale' as const),
       }
     })
-  }, [rates, pricingEffectiveDateIso])
+  }, [rates, pricingEffectiveDateIso, metadataSyncedSuppliers])
+  const hasSyncedSuppliers = (metadataSyncedSuppliers?.length ?? 0) > 0
 
   const utilitiesInData = useMemo(() => {
     const u = new Set<Utility>()
@@ -655,6 +769,11 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
   })
 
   const usageKwh = parseUsageKwh(usageStr)
+  const shouldShowUsageMirror = Number.isFinite(usageKwh) && usageKwh > 0
+  const isCriticalUsage = shouldShowUsageMirror && usageKwh > 1_000_000
+  const formattedUsage = shouldShowUsageMirror
+    ? new Intl.NumberFormat('en-US').format(usageKwh)
+    : ''
 
   const ctx = useMemo(
     (): DiscoveryCtx => ({
@@ -705,10 +824,24 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
               </span>
             ) : null}
           </div>
-          <div className={`mt-3 ${SLAB_SYNC_STRIP}`} role="region" aria-label="Supplier sync status">
-            {supplierSyncBadges.length === 0 ? (
-              <p className="text-xs text-slate-500">No supplier rows in the database yet.</p>
-            ) : (
+          {isMetadataLoading ? (
+            <div className="mt-3 text-center w-full flex justify-center" aria-live="polite">
+              <div className={VALIDATION_SLAB}>
+                <p className="m-0 animate-neon-fuchsia-flicker text-xs font-black uppercase tracking-[0.3em] text-[#ff00ff]">
+                  DATA VALIDATING - PRICING AVAILABLE SHORTLY
+                </p>
+              </div>
+            </div>
+          ) : !hasSyncedSuppliers ? (
+            <div className="mt-3 text-center w-full flex justify-center" role="status">
+              <div
+                className={`${SLAB_SYNC_STRIP} rounded-md border-4 border-cyan-400/70 px-4 py-3 text-cyan-200`}
+              >
+                <p className="m-0 text-xs font-black uppercase tracking-[0.24em]">READY FOR IMPORT</p>
+              </div>
+            </div>
+          ) : (
+            <div className={`mt-3 ${SLAB_SYNC_STRIP}`} role="region" aria-label="Supplier sync status">
               <div className="flex flex-wrap gap-2">
                 {supplierSyncBadges.map(({ supplier, status }) => (
                   <span
@@ -724,8 +857,8 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
                   </span>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -784,6 +917,17 @@ export function PricePuller({ rates, ingestionEpoch = 0 }: PricePullerProps) {
             onChange={(e) => setUsageStr(e.target.value)}
             aria-label="Annual usage in kilowatt-hours"
           />
+          {shouldShowUsageMirror ? (
+            <div
+              className={`text-center text-xs font-bold tracking-wide md:text-left ${
+                isCriticalUsage ? 'animate-pulse text-fuchsia-400' : 'text-cyan-400/80'
+              }`}
+            >
+              {isCriticalUsage
+                ? `⚠️ Verify: ${formattedUsage} kWh`
+                : `Value: ${formattedUsage} kWh`}
+            </div>
+          ) : null}
         </label>
       </div>
 
