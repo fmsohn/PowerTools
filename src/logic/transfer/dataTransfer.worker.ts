@@ -50,7 +50,9 @@ function ensureExportPipeline(): void {
     },
   })
 
-  const compressedStream = jsonStream.readable.pipeThrough(new CompressionStream('gzip'))
+  const compressedStream = jsonStream.readable.pipeThrough(
+    new CompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>,
+  )
   exportJsonWriter = jsonStream.writable.getWriter()
   exportCompressedBlobPromise = new Response(compressedStream).blob()
 }
